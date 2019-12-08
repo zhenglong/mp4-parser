@@ -26,6 +26,9 @@ typedef int8_t s8;
 
 enum {
     GF_ISOM_BOX_TYPE_FTYP    = GF_4CC( 'f', 't', 'y', 'p' ),
+    GF_ISOM_BOX_TYPE_FREE    = GF_4CC( 'f', 'r', 'e', 'e' ),
+    GF_ISOM_BOX_TYPE_MDAT    = GF_4CC( 'm', 'd', 'a', 't' ),
+    GF_ISOM_BOX_TYPE_MOOV    = GF_4CC( 'm', 'o', 'o', 'v' )
 };
 
 #define GF_ISOM_BOX            \
@@ -48,6 +51,24 @@ struct FileTypeBox {
     u32 *compatible_brands;
 };
 
+/*
+ * 内容直接忽略
+ */
+struct FreeSpaceBox {
+    GF_ISOM_BOX
+};
+
+struct MediaDataBox {
+    GF_ISOM_BOX
+    u64 data_size;
+    u8 *data;
+};
+
+struct MovieBox {
+    GF_ISOM_BOX
+    
+};
+
 void printU32WithStr(u32 val) {
     char str[5];
     memset(str, 0, sizeof(str));
@@ -58,60 +79,111 @@ void printU32WithStr(u32 val) {
     cout << str;
 }
 
-unsigned int currentIndex = 0;
+// 环形缓存
+const static int BUF_LEN = 4096;
+char buf[BUF_LEN];
+u32 rangeStart = 0; // 可用数据的起始索引
+u32 rangeEnd = BUF_LEN - 1; // 可用数据的结束索引
+ifstream file;
 
-unsigned int readU32(char *buf) {
-    unsigned int num = buf[currentIndex++];
+u8 readNextByte() {
+    u8 res = (u8)buf[rangeStart];
+    rangeStart = (rangeStart + 1) % BUF_LEN;
+    return  res;
+}
+
+void makeSureBufReady(u32 requestedBytes) {
+    // 如果buf不足以完成本次读取，则填满buf的可用空间
+    // TODO: 暂时不处理：1. 到达文件结尾的情况 2. 请求的字节数大于BUF_LEN
+    if (((rangeStart + requestedBytes - 1) % BUF_LEN) > rangeEnd) {
+        auto availableStartIndex = (rangeEnd + 1) % BUF_LEN;
+        
+        file.read(buf + availableStartIndex, BUF_LEN - rangeEnd);
+        file.read(buf, rangeStart);
+        rangeEnd = (rangeStart - 1 + BUF_LEN) % BUF_LEN;
+    }
+}
+
+u32 readU32(char *buf) {
+    makeSureBufReady(sizeof(u32));
+    u32 num = readNextByte();
     num <<= 8;
-    num |= buf[currentIndex++];
+    num |= readNextByte();
     num <<= 8;
-    num |= buf[currentIndex++];
+    num |= readNextByte();
     num <<= 8;
-    num |= buf[currentIndex++];
+    num |= readNextByte();
     return num;
 }
 
-unsigned long readU64(char *buf) {
-    unsigned long num = buf[currentIndex++];
+u64 readU64(char *buf) {
+    makeSureBufReady(sizeof(u64));
+    
+    u64 num = readNextByte();
     num <<= 8;
-    num |= buf[currentIndex++];
+    num |= readNextByte();
     num <<= 8;
-    num |= buf[currentIndex++];
+    num |= readNextByte();
     num <<= 8;
-    num |= buf[currentIndex++];
+    num |= readNextByte();
     num <<= 8;
     
-    num |= buf[currentIndex++];
+    num |= readNextByte();
     num <<= 8;
-    num |= buf[currentIndex++];
+    num |= readNextByte();
     num <<= 8;
-    num |= buf[currentIndex++];
+    num |= readNextByte();
     num <<= 8;
-    num |= buf[currentIndex++];
+    num |= readNextByte();
     
     return num;
 }
 
-void readCharArray(char *buf, unsigned int len, char *dest) {
-    memcpy(dest, buf + currentIndex, len);
-    currentIndex += len;
+void skip(u32 bytes) {
+    // 如果跳过的字节数大于BUF_LEN，则直接清空缓存，然后seek到指定位置
+    if (bytes > BUF_LEN) {
+        memset(buf, 0, BUF_LEN);
+        auto jumpLen = bytes - ((rangeEnd + 1 + BUF_LEN - rangeStart) % BUF_LEN);
+        file.seekg(jumpLen, ios_base::seek_dir::cur);
+        rangeStart = 0;
+        if (!file.eof()) {
+            file.read(buf, BUF_LEN);
+            rangeEnd = (u32)file.gcount() - 1;
+        }
+    } else {
+        makeSureBufReady(bytes);
+        rangeStart = (rangeStart + bytes) % BUF_LEN;
+    }
+}
+
+void readCharArray(char *buf, u32 len, u8 *dest) {
+    // TODO: 暂不处理len大于BUF_LEN的情况
+    makeSureBufReady(len);
+    auto expectedRangStart = (rangeStart + len) % BUF_LEN;
+    if (expectedRangStart > rangeStart) {
+        memcpy(dest, buf + rangeStart, len);
+        rangeStart = expectedRangStart;
+    } else {
+        auto firstPartLen =BUF_LEN - rangeStart;
+        memcpy(dest, buf + rangeStart, firstPartLen);
+        memcpy(dest + firstPartLen, buf, len - firstPartLen);
+    }
 }
 
 int main(int argc, const char * argv[]) {
-    
-    ifstream file;
     file.open("/Users/hujiang/Downloads/1.mp4");
-    const static int BUF_LEN = 4096;
-    char buf[BUF_LEN];
     memset(buf, 0,  BUF_LEN);
     if (file.is_open()) {
         file.read(buf, BUF_LEN);
-        auto readLength = file.gcount();
+        // 读取的字节数肯定小于等于BUF_LEN
+        rangeEnd = (u32)file.gcount() - 1;
         struct FileTypeBox fty;
         struct Box box;
+        struct MediaDataBox mdat;
+        struct MovieBox moov;
         
-        while (currentIndex < readLength) {
-            auto boxStartIndex = currentIndex;
+        while (((rangeStart + 1) % BUF_LEN) < rangeEnd) {
+            auto boxStartIndex = rangeStart;
             box.size = readU32(buf);
             box.type = readU32(buf);
             if (box.size == 1) {
@@ -127,20 +199,38 @@ int main(int argc, const char * argv[]) {
                     fty.major_brand = readU32(buf);
                     fty.minor_version = readU32(buf);
                     
-                    u64 compatibleBrandsLen = box.size - (currentIndex - boxStartIndex);
+                    cout << "major brand: ";
+                    printU32WithStr(fty.major_brand);
+                    cout << endl;
+                    
+                    auto readBoxLen = (rangeStart + BUF_LEN - boxStartIndex) % BUF_LEN;
+                    u64 compatibleBrandsLen = box.size - readBoxLen;
                     fty.brand_count = (u32)(compatibleBrandsLen >> 2);
                     fty.compatible_brands = (u32*)malloc(compatibleBrandsLen);
-                    memcpy(fty.compatible_brands, buf + currentIndex, compatibleBrandsLen);
                     cout << "compatible brands: ";
                     for (auto i = 0; i < fty.brand_count; i++) {
+                        fty.compatible_brands[i] = readU32(buf);
                         printU32WithStr(fty.compatible_brands[i]);
                         cout << ' ';
                     }
                     cout << endl;
                 }
                     break;
+                case GF_ISOM_BOX_TYPE_FREE:
+                    skip((u32)box.size - ((rangeStart + BUF_LEN - boxStartIndex) % BUF_LEN));
+                    break;
+                case GF_ISOM_BOX_TYPE_MDAT:
+                {
+                    memcpy(&mdat, &box, sizeof(box));
+                    skip((u32)box.size - ((rangeStart + BUF_LEN - boxStartIndex) % BUF_LEN));
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_MOOV:
+                    memcpy(&moov, &box, sizeof(box));
+                    skip((u32)box.size - ((rangeStart + BUF_LEN - boxStartIndex) % BUF_LEN));
+                    break;
                 default:
-                    currentIndex++;
+                    readNextByte();
                     break;
             }
         }
