@@ -28,13 +28,19 @@ enum {
     GF_ISOM_BOX_TYPE_FTYP    = GF_4CC( 'f', 't', 'y', 'p' ),
     GF_ISOM_BOX_TYPE_FREE    = GF_4CC( 'f', 'r', 'e', 'e' ),
     GF_ISOM_BOX_TYPE_MDAT    = GF_4CC( 'm', 'd', 'a', 't' ),
-    GF_ISOM_BOX_TYPE_MOOV    = GF_4CC( 'm', 'o', 'o', 'v' )
+    GF_ISOM_BOX_TYPE_MOOV    = GF_4CC( 'm', 'o', 'o', 'v' ),
+    GF_ISOM_BOX_TYPE_MVHD    = GF_4CC( 'm', 'v', 'h', 'd' ),
 };
 
 #define GF_ISOM_BOX            \
 u32 type;            \
 u64 size;
 
+
+#define GF_ISOM_FULL_BOX        \
+GF_ISOM_BOX            \
+u8 version;            \
+u32 flags;            \
 
 struct Box {
     // 长度是Box大小+具体Box大小
@@ -67,6 +73,21 @@ struct MediaDataBox {
 struct MovieBox {
     GF_ISOM_BOX
     
+};
+
+struct MovieHeaderBox {
+    GF_ISOM_FULL_BOX
+    u64 creation_time;
+    u64 modification_time;
+    u32 time_scale;
+    u64 duration;
+    
+    u32 rate;
+    u16 volume;
+    u8 reserved[10];
+    u32 matrix[9];
+    u32 pre_defined[6];
+    u32 next_track_id;
 };
 
 void printU32WithStr(u32 val) {
@@ -104,7 +125,25 @@ void makeSureBufReady(u32 requestedBytes) {
     }
 }
 
-u32 readU32(char *buf) {
+u32 readU16() {
+    makeSureBufReady(sizeof(u16));
+    u32 num = readNextByte();
+    num <<= 8;
+    num |= readNextByte();
+    return num;
+}
+
+u32 readU24() {
+    makeSureBufReady(sizeof(u8) * 3);
+    u32 num = readNextByte();
+    num <<= 8;
+    num |= readNextByte();
+    num <<= 8;
+    num |= readNextByte();
+    return num;
+}
+
+u32 readU32() {
     makeSureBufReady(sizeof(u32));
     u32 num = readNextByte();
     num <<= 8;
@@ -116,7 +155,14 @@ u32 readU32(char *buf) {
     return num;
 }
 
-u64 readU64(char *buf) {
+void readU32Array(u32 *arr, u32 len) {
+    makeSureBufReady(sizeof(u32) * len);
+    for (auto i = 0; i < len; i++) {
+        arr[i] = readU32();
+    }
+}
+
+u64 readU64() {
     makeSureBufReady(sizeof(u64));
     
     u64 num = readNextByte();
@@ -156,7 +202,7 @@ void skip(u32 bytes) {
     }
 }
 
-void readCharArray(char *buf, u32 len, u8 *dest) {
+void readU8Array(u8 *dest, u32 len) {
     // TODO: 暂不处理len大于BUF_LEN的情况
     makeSureBufReady(len);
     auto expectedRangStart = (rangeStart + len) % BUF_LEN;
@@ -181,23 +227,30 @@ int main(int argc, const char * argv[]) {
         struct Box box;
         struct MediaDataBox mdat;
         struct MovieBox moov;
+        struct MovieHeaderBox mvhd;
         
         while (((rangeStart + 1) % BUF_LEN) < rangeEnd) {
             auto boxStartIndex = rangeStart;
-            box.size = readU32(buf);
-            box.type = readU32(buf);
+            box.size = readU32();
+            box.type = readU32();
             if (box.size == 1) {
-                box.size  = readU64(buf);
+                box.size  = readU64();
             }
             cout << "Found box type: ";
             printU32WithStr(box.type);
             cout << endl;
+            u8 version = 0;
+            u32 flags = 0;
+            if (box.type == GF_ISOM_BOX_TYPE_MVHD) {
+                version = readNextByte();
+                flags = readU24();
+            }
             switch (box.type) {
                 case GF_ISOM_BOX_TYPE_FTYP:
                 {
                     memcpy(&fty, &box, sizeof(box));
-                    fty.major_brand = readU32(buf);
-                    fty.minor_version = readU32(buf);
+                    fty.major_brand = readU32();
+                    fty.minor_version = readU32();
                     
                     cout << "major brand: ";
                     printU32WithStr(fty.major_brand);
@@ -209,7 +262,7 @@ int main(int argc, const char * argv[]) {
                     fty.compatible_brands = (u32*)malloc(compatibleBrandsLen);
                     cout << "compatible brands: ";
                     for (auto i = 0; i < fty.brand_count; i++) {
-                        fty.compatible_brands[i] = readU32(buf);
+                        fty.compatible_brands[i] = readU32();
                         printU32WithStr(fty.compatible_brands[i]);
                         cout << ' ';
                     }
@@ -226,8 +279,34 @@ int main(int argc, const char * argv[]) {
                 }
                     break;
                 case GF_ISOM_BOX_TYPE_MOOV:
+                {
                     memcpy(&moov, &box, sizeof(box));
-                    skip((u32)box.size - ((rangeStart + BUF_LEN - boxStartIndex) % BUF_LEN));
+//                    skip((u32)box.size - ((rangeStart + BUF_LEN - boxStartIndex) % BUF_LEN));
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_MVHD:
+                {
+                    memcpy(&mvhd, &box, sizeof(box));
+                    if (version == 1) {
+                        mvhd.creation_time = readU64();
+                        mvhd.modification_time = readU64();
+                        mvhd.time_scale = readU32();
+                        mvhd.duration = readU64();
+                    } else {
+                        mvhd.creation_time = readU32();
+                        mvhd.modification_time = readU32();
+                        mvhd.time_scale = readU32();
+                        mvhd.duration = readU32();
+                    }
+                    mvhd.flags = flags;
+                    mvhd.version = version;
+                    mvhd.rate = readU32();
+                    mvhd.volume = readU16();
+                    readU8Array(mvhd.reserved, sizeof(mvhd.reserved));
+                    readU32Array(mvhd.matrix, sizeof(mvhd.matrix) / sizeof(u32));
+                    readU32Array(mvhd.pre_defined, sizeof(mvhd.pre_defined) / sizeof(u32));
+                    mvhd.next_track_id = readU32();
+                }
                     break;
                 default:
                     readNextByte();
