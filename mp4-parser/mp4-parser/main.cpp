@@ -30,6 +30,10 @@ enum {
     GF_ISOM_BOX_TYPE_MDAT    = GF_4CC( 'm', 'd', 'a', 't' ),
     GF_ISOM_BOX_TYPE_MOOV    = GF_4CC( 'm', 'o', 'o', 'v' ),
     GF_ISOM_BOX_TYPE_MVHD    = GF_4CC( 'm', 'v', 'h', 'd' ),
+    GF_ISOM_BOX_TYPE_TRAK    = GF_4CC( 't', 'r', 'a', 'k' ),
+    GF_ISOM_BOX_TYPE_TKHD    = GF_4CC( 't', 'k', 'h', 'd' ),
+    GF_ISOM_BOX_TYPE_EDTS    = GF_4CC( 'e', 'd', 't', 's' ),
+    GF_ISOM_BOX_TYPE_ELST    = GF_4CC( 'e', 'l', 's', 't' ),
 };
 
 #define GF_ISOM_BOX            \
@@ -88,6 +92,49 @@ struct MovieHeaderBox {
     u32 matrix[9];
     u32 pre_defined[6];
     u32 next_track_id;
+};
+
+struct TrackBox {
+    GF_ISOM_BOX
+};
+
+struct TrackHeaderBox {
+    GF_ISOM_FULL_BOX
+    
+    u64 creation_time;
+    u64 modification_time;
+    u32 track_id;
+    u32 reserved;
+    u64 duration;
+    
+    u32 reserved1[2];
+    u16 layer;
+    u16 alternate_group;
+    u16 volume;
+    u16 reserved2;
+    u32 matrix[9];
+    u32 width;
+    u32 height;
+};
+
+struct EditListEntryBox {
+    u64 segment_duration;
+    u64 media_time;
+    u16 media_rate_interger;
+    u16 media_rate_fraction;
+};
+
+// 容器Box
+struct EditBox {
+    GF_ISOM_BOX
+};
+
+struct EditListBox {
+    GF_ISOM_FULL_BOX
+    
+    u32 entry_count;
+    
+    struct EditListEntryBox *list;
 };
 
 void printU32WithStr(u32 val) {
@@ -228,6 +275,10 @@ int main(int argc, const char * argv[]) {
         struct MediaDataBox mdat;
         struct MovieBox moov;
         struct MovieHeaderBox mvhd;
+        struct TrackBox trak;
+        struct TrackHeaderBox tkhd;
+        struct EditBox edts;
+        struct EditListBox elst;
         
         while (((rangeStart + 1) % BUF_LEN) < rangeEnd) {
             auto boxStartIndex = rangeStart;
@@ -239,9 +290,12 @@ int main(int argc, const char * argv[]) {
             cout << "Found box type: ";
             printU32WithStr(box.type);
             cout << endl;
+            // 继承自FULLBOX的BOX会多出2个字段
             u8 version = 0;
             u32 flags = 0;
-            if (box.type == GF_ISOM_BOX_TYPE_MVHD) {
+            if (box.type == GF_ISOM_BOX_TYPE_MVHD ||
+                box.type == GF_ISOM_BOX_TYPE_TKHD ||
+                box.type == GF_ISOM_BOX_TYPE_ELST) {
                 version = readNextByte();
                 flags = readU24();
             }
@@ -306,6 +360,71 @@ int main(int argc, const char * argv[]) {
                     readU32Array(mvhd.matrix, sizeof(mvhd.matrix) / sizeof(u32));
                     readU32Array(mvhd.pre_defined, sizeof(mvhd.pre_defined) / sizeof(u32));
                     mvhd.next_track_id = readU32();
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_TRAK:
+                {
+                    memcpy(&trak, &box, sizeof(box));
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_TKHD:
+                {
+                    memcpy(&tkhd, &box, sizeof(box));
+                    tkhd.version = version;
+                    tkhd.flags = flags;
+                    if (version == 1) {
+                        tkhd.creation_time = readU64();
+                        tkhd.modification_time = readU64();
+                        tkhd.track_id = readU32();
+                        tkhd.reserved = readU32();
+                        tkhd.duration = readU64();
+                    } else {
+                        tkhd.creation_time = readU32();
+                        tkhd.modification_time = readU32();
+                        tkhd.track_id = readU32();
+                        tkhd.reserved = readU32();
+                        tkhd.duration = readU32();
+                    }
+                    
+                    readU32Array(tkhd.reserved1, sizeof(tkhd.reserved1) / sizeof(u32));
+                    tkhd.layer = readU16();
+                    tkhd.alternate_group = readU16();
+                    tkhd.volume = readU16();
+                    tkhd.reserved2 = readU16();
+                    readU32Array(tkhd.matrix, sizeof(tkhd.matrix) / sizeof(u32));
+                    tkhd.width = readU32();
+                    tkhd.height = readU32();
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_EDTS:
+                {
+                    memcpy(&edts, &box, sizeof(box));
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_ELST:
+                {
+                    memcpy(&elst, &box, sizeof(box));
+                    elst.version = version;
+                    elst.flags = flags;
+                    elst.entry_count = readU32();
+                    elst.list = (EditListEntryBox*)malloc(sizeof(EditListEntryBox) * elst.entry_count);
+                    if (elst.version == 1) {
+                        for (auto i = 0; i < elst.entry_count; i++) {
+                            elst.list[i].segment_duration = readU64();
+                            elst.list[i].media_time = readU64();
+                            
+                            elst.list[i].media_rate_interger = readU16();
+                            elst.list[i].media_rate_fraction = readU16();
+                        }
+                    } else {
+                        for (auto i = 0; i < elst.entry_count; i++) {
+                            elst.list[i].segment_duration = readU32();
+                            elst.list[i].media_time = readU32();
+                            
+                            elst.list[i].media_rate_interger = readU16();
+                            elst.list[i].media_rate_fraction = readU16();
+                        }
+                    }
                 }
                     break;
                 default:
