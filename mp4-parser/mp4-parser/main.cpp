@@ -184,6 +184,7 @@ int main(int argc, const char * argv[]) {
         struct SyncSampleBox stss;
         struct SampleToChunkBox stsc;
         struct SampleSizeBox stsz;
+        struct ChunkOffsetBox stco;
         
         while (((rangeStart + 1) % BUF_LEN) != rangeEnd) {
             auto boxStartIndex = rangeStart;
@@ -209,7 +210,8 @@ int main(int argc, const char * argv[]) {
                 box.type == GF_ISOM_BOX_TYPE_STTS ||
                 box.type == GF_ISOM_BOX_TYPE_STSS ||
                 box.type == GF_ISOM_BOX_TYPE_STSC ||
-                box.type == GF_ISOM_BOX_TYPE_STSZ) {
+                box.type == GF_ISOM_BOX_TYPE_STSZ ||
+                box.type == GF_ISOM_BOX_TYPE_STCO) {
                 version = readNextByte();
                 flags = readU24();
             }
@@ -554,6 +556,18 @@ int main(int argc, const char * argv[]) {
                         for (auto i = 0; i < stsz.sample_count; i++) {
                             stsz.sample_size_list[i] = readU32();
                         }
+                    }
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_STCO:
+                {
+                    memcpy(&stco, &box, sizeof(box));
+                    stco.version = version;
+                    stco.flags = flags;
+                    stco.entry_count = readU32();
+                    stco.chunk_offset_list = (u32*)malloc(sizeof(u32) * stco.entry_count);
+                    for (auto i = 0; i < stco.entry_count; i++) {
+                        stco.chunk_offset_list[i] = readU32();
                     }
                 }
                     break;

@@ -236,6 +236,21 @@ struct VideoSampleDescriptionEntryBox {
     u16 color_table_id;
 };
 
+// has three versions
+struct MpegAudioSampleDescriptionEntryBox {
+    GF_ISOM_SAMPLE_ENTRY_FIELDS
+    u16 version;
+    u16 revision;
+    u32 vendor;
+    u16 channel_count;
+    u16 bits_per_sample;
+    u16 compression_id;
+    u16 packet_size;
+    u16 sample_rate_hi;
+    u16 sample_rate_lo;
+    u8 extensions[36];
+};
+
 struct AvcDecoderConfigurationBox {
     GF_ISOM_BOX
     
@@ -286,6 +301,12 @@ struct SampleSizeBox {
     u32 sample_size;
     u32 sample_count;
     u32 *sample_size_list;
+};
+
+struct ChunkOffsetBox {
+    GF_ISOM_FULL_BOX
+    u32 entry_count;
+    u32 *chunk_offset_list;
 };
 
 
