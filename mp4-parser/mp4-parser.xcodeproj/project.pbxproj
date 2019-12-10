@@ -25,6 +25,8 @@
 /* Begin PBXFileReference section */
 		3EABF7912398B1E4004012EA /* mp4-parser */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "mp4-parser"; sourceTree = BUILT_PRODUCTS_DIR; };
 		3EABF7942398B1E4004012EA /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
+		3EABF79B239F4AC9004012EA /* type_def.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = type_def.h; sourceTree = "<group>"; };
+		3EABF79C239F4B43004012EA /* enum_def.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = enum_def.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -58,6 +60,8 @@
 			isa = PBXGroup;
 			children = (
 				3EABF7942398B1E4004012EA /* main.cpp */,
+				3EABF79B239F4AC9004012EA /* type_def.h */,
+				3EABF79C239F4B43004012EA /* enum_def.h */,
 			);
 			path = "mp4-parser";
 			sourceTree = "<group>";

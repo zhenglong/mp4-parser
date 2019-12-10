@@ -9,133 +9,11 @@
 #include <iostream>
 #include <fstream>
 #include <cstring>
-#include <cstdlib>
+
+#include "enum_def.h"
+#include "type_def.h"
 
 using namespace std;
-
-typedef uint64_t u64;
-typedef uint32_t u32;
-typedef uint16_t u16;
-typedef uint8_t u8;
-typedef int64_t s64;
-typedef int32_t s32;
-typedef int16_t s16;
-typedef int8_t s8;
-
-#define GF_4CC(a,b,c,d) (((a)<<24)|((b)<<16)|((c)<<8)|(d))
-
-enum {
-    GF_ISOM_BOX_TYPE_FTYP    = GF_4CC( 'f', 't', 'y', 'p' ),
-    GF_ISOM_BOX_TYPE_FREE    = GF_4CC( 'f', 'r', 'e', 'e' ),
-    GF_ISOM_BOX_TYPE_MDAT    = GF_4CC( 'm', 'd', 'a', 't' ),
-    GF_ISOM_BOX_TYPE_MOOV    = GF_4CC( 'm', 'o', 'o', 'v' ),
-    GF_ISOM_BOX_TYPE_MVHD    = GF_4CC( 'm', 'v', 'h', 'd' ),
-    GF_ISOM_BOX_TYPE_TRAK    = GF_4CC( 't', 'r', 'a', 'k' ),
-    GF_ISOM_BOX_TYPE_TKHD    = GF_4CC( 't', 'k', 'h', 'd' ),
-    GF_ISOM_BOX_TYPE_EDTS    = GF_4CC( 'e', 'd', 't', 's' ),
-    GF_ISOM_BOX_TYPE_ELST    = GF_4CC( 'e', 'l', 's', 't' ),
-};
-
-#define GF_ISOM_BOX            \
-u32 type;            \
-u64 size;
-
-
-#define GF_ISOM_FULL_BOX        \
-GF_ISOM_BOX            \
-u8 version;            \
-u32 flags;            \
-
-struct Box {
-    // 长度是Box大小+具体Box大小
-    // 如果size为1，则长度为box_length64；
-    // 如果size为0，则为最后一个box，文件结尾即为该box结尾。
-    GF_ISOM_BOX
-};
-
-struct FileTypeBox {
-    GF_ISOM_BOX
-    u32 major_brand;
-    u32 minor_version;
-    u32 brand_count;
-    u32 *compatible_brands;
-};
-
-/*
- * 内容直接忽略
- */
-struct FreeSpaceBox {
-    GF_ISOM_BOX
-};
-
-struct MediaDataBox {
-    GF_ISOM_BOX
-    u64 data_size;
-    u8 *data;
-};
-
-struct MovieBox {
-    GF_ISOM_BOX
-    
-};
-
-struct MovieHeaderBox {
-    GF_ISOM_FULL_BOX
-    u64 creation_time;
-    u64 modification_time;
-    u32 time_scale;
-    u64 duration;
-    
-    u32 rate;
-    u16 volume;
-    u8 reserved[10];
-    u32 matrix[9];
-    u32 pre_defined[6];
-    u32 next_track_id;
-};
-
-struct TrackBox {
-    GF_ISOM_BOX
-};
-
-struct TrackHeaderBox {
-    GF_ISOM_FULL_BOX
-    
-    u64 creation_time;
-    u64 modification_time;
-    u32 track_id;
-    u32 reserved;
-    u64 duration;
-    
-    u32 reserved1[2];
-    u16 layer;
-    u16 alternate_group;
-    u16 volume;
-    u16 reserved2;
-    u32 matrix[9];
-    u32 width;
-    u32 height;
-};
-
-struct EditListEntryBox {
-    u64 segment_duration;
-    u64 media_time;
-    u16 media_rate_interger;
-    u16 media_rate_fraction;
-};
-
-// 容器Box
-struct EditBox {
-    GF_ISOM_BOX
-};
-
-struct EditListBox {
-    GF_ISOM_FULL_BOX
-    
-    u32 entry_count;
-    
-    struct EditListEntryBox *list;
-};
 
 void printU32WithStr(u32 val) {
     char str[5];
@@ -154,22 +32,30 @@ u32 rangeStart = 0; // 可用数据的起始索引
 u32 rangeEnd = BUF_LEN - 1; // 可用数据的结束索引
 ifstream file;
 
-u8 readNextByte() {
-    u8 res = (u8)buf[rangeStart];
-    rangeStart = (rangeStart + 1) % BUF_LEN;
-    return  res;
-}
-
 void makeSureBufReady(u32 requestedBytes) {
     // 如果buf不足以完成本次读取，则填满buf的可用空间
     // TODO: 暂时不处理：1. 到达文件结尾的情况 2. 请求的字节数大于BUF_LEN
-    if (((rangeStart + requestedBytes - 1) % BUF_LEN) > rangeEnd) {
+    cout << rangeStart << ' ' << rangeEnd << endl;
+    if (((rangeEnd + BUF_LEN - rangeStart) % BUF_LEN) < requestedBytes) {
         auto availableStartIndex = (rangeEnd + 1) % BUF_LEN;
         
-        file.read(buf + availableStartIndex, BUF_LEN - rangeEnd);
-        file.read(buf, rangeStart);
+        if (availableStartIndex > rangeStart) {
+            file.read(buf + availableStartIndex, BUF_LEN - availableStartIndex);
+            if (rangeStart > 0) {
+                file.read(buf, rangeStart);
+            }
+        } else {
+            file.read(buf + availableStartIndex, rangeStart - availableStartIndex);
+        }
         rangeEnd = (rangeStart - 1 + BUF_LEN) % BUF_LEN;
     }
+}
+
+u8 readNextByte() {
+    makeSureBufReady(sizeof(u8));
+    u8 res = (u8)buf[rangeStart];
+    rangeStart = (rangeStart + 1) % BUF_LEN;
+    return  res;
 }
 
 u32 readU16() {
@@ -206,6 +92,12 @@ void readU32Array(u32 *arr, u32 len) {
     makeSureBufReady(sizeof(u32) * len);
     for (auto i = 0; i < len; i++) {
         arr[i] = readU32();
+    }
+}
+void readU16Array(u16 *arr, u32 len) {
+    makeSureBufReady(sizeof(u16) * len);
+    for (auto i = 0; i < len; i++) {
+        arr[i] = readU16();
     }
 }
 
@@ -251,16 +143,16 @@ void skip(u32 bytes) {
 
 void readU8Array(u8 *dest, u32 len) {
     // TODO: 暂不处理len大于BUF_LEN的情况
-    makeSureBufReady(len);
+    makeSureBufReady(len * sizeof(u8));
     auto expectedRangStart = (rangeStart + len) % BUF_LEN;
     if (expectedRangStart > rangeStart) {
         memcpy(dest, buf + rangeStart, len);
-        rangeStart = expectedRangStart;
     } else {
         auto firstPartLen =BUF_LEN - rangeStart;
         memcpy(dest, buf + rangeStart, firstPartLen);
         memcpy(dest + firstPartLen, buf, len - firstPartLen);
     }
+    rangeStart = expectedRangStart;
 }
 
 int main(int argc, const char * argv[]) {
@@ -279,8 +171,21 @@ int main(int argc, const char * argv[]) {
         struct TrackHeaderBox tkhd;
         struct EditBox edts;
         struct EditListBox elst;
+        struct MediaBox mdia;
+        struct MediaHeaderBox mdhd;
+        struct HandlerBox hdlr;
+        struct MediaInformationBox minf;
+        struct VideoMediaHeaderBox vmhd;
+        struct DataInformationBox dinf;
+        struct DataReferenceBox dref;
+        struct SampleTableBox stbl;
+        struct SampleDescriptionBox stsd;
+        struct TimeToSampleBox stts;
+        struct SyncSampleBox stss;
+        struct SampleToChunkBox stsc;
+        struct SampleSizeBox stsz;
         
-        while (((rangeStart + 1) % BUF_LEN) < rangeEnd) {
+        while (((rangeStart + 1) % BUF_LEN) != rangeEnd) {
             auto boxStartIndex = rangeStart;
             box.size = readU32();
             box.type = readU32();
@@ -295,7 +200,16 @@ int main(int argc, const char * argv[]) {
             u32 flags = 0;
             if (box.type == GF_ISOM_BOX_TYPE_MVHD ||
                 box.type == GF_ISOM_BOX_TYPE_TKHD ||
-                box.type == GF_ISOM_BOX_TYPE_ELST) {
+                box.type == GF_ISOM_BOX_TYPE_ELST ||
+                box.type == GF_ISOM_BOX_TYPE_MDHD ||
+                box.type == GF_ISOM_BOX_TYPE_HDLR ||
+                box.type == GF_ISOM_BOX_TYPE_VMHD ||
+                box.type == GF_ISOM_BOX_TYPE_DREF ||
+                box.type == GF_ISOM_BOX_TYPE_STSD ||
+                box.type == GF_ISOM_BOX_TYPE_STTS ||
+                box.type == GF_ISOM_BOX_TYPE_STSS ||
+                box.type == GF_ISOM_BOX_TYPE_STSC ||
+                box.type == GF_ISOM_BOX_TYPE_STSZ) {
                 version = readNextByte();
                 flags = readU24();
             }
@@ -423,6 +337,222 @@ int main(int argc, const char * argv[]) {
                             
                             elst.list[i].media_rate_interger = readU16();
                             elst.list[i].media_rate_fraction = readU16();
+                        }
+                    }
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_MDIA:
+                {
+                    memcpy(&mdia, &box, sizeof(box));
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_MDHD:
+                {
+                    memcpy(&mdhd, &box, sizeof(box));
+                    mdhd.version = version;
+                    mdhd.flags = flags;
+                    if (version == 1) {
+                        mdhd.creation_time = readU64();
+                        mdhd.modification_time = readU64();
+                        mdhd.time_scale = readU32();
+                        mdhd.duration = readU64();
+                    } else {
+                        mdhd.creation_time = readU32();
+                        mdhd.modification_time = readU32();
+                        mdhd.time_scale = readU32();
+                        mdhd.duration = readU32();
+                    }
+                    mdhd.language = readU16();
+                    mdhd.quality = readU16();
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_HDLR:
+                {
+                    memcpy(&hdlr, &box, sizeof(box));
+                    hdlr.version = version;
+                    hdlr.flags = flags;
+                    hdlr.pre_defined = readU32();
+                    hdlr.handler_type = readU32();
+                    readU32Array(hdlr.reserved, sizeof(hdlr.reserved) / sizeof(u32));
+                    hdlr.name_length = (u32)hdlr.size - ((rangeStart + BUF_LEN - boxStartIndex) % BUF_LEN);
+                    hdlr.name = (char*)malloc(sizeof(char) * hdlr.name_length);
+                    readU8Array((u8*)hdlr.name, hdlr.name_length);
+                    
+                    cout << "handler_type: ";
+                    printU32WithStr(hdlr.handler_type);
+                    cout << endl;
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_MINF:
+                {
+                    memcpy(&minf, &box, sizeof(box));
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_VMHD:
+                {
+                    memcpy(&vmhd, &box, sizeof(box));
+                    vmhd.version = version;
+                    vmhd.flags = flags;
+                    vmhd.graphics_mode = readU16();
+                    readU16Array(vmhd.opcolor, sizeof(vmhd.opcolor) / sizeof(u16));
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_DINF:
+                {
+                    memcpy(&dinf, &box, sizeof(box));
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_DREF:
+                {
+                    memcpy(&dref, &box, sizeof(box));
+                    dref.version = version;
+                    dref.flags = flags;
+                    dref.entry_count = readU32();
+                    dref.list = (DataReferenceEntryBox**)malloc(sizeof(DataReferenceEntryBox*) * dref.entry_count);
+                    for (auto i = 0; i < dref.entry_count; i++) {
+                        auto savedRangStart = rangeStart;
+                        auto entrySize = readU32();
+                        auto entryType = readU32();
+                        auto entryVersion = readNextByte();
+                        auto entryFlags = readU24();
+                        switch (entryType) {
+                            case GF_ISOM_ENTRY_TYPE_URL:
+                            case GF_ISOM_ENTRY_TYPE_ALIS:
+                            {
+                                auto tempEntry = (DataReferenceEntryBox*)malloc(sizeof(DataReferenceEntryBox));
+                                tempEntry->size = entrySize;
+                                tempEntry->type = entryType;
+                                tempEntry->version = entryVersion;
+                                tempEntry->flags = entryFlags;
+                                auto locationLength = (entrySize - ((rangeStart + BUF_LEN - savedRangStart) % BUF_LEN));
+                                if (locationLength > 0) {
+                                    tempEntry->location = (char *)malloc(sizeof(char) * locationLength);
+                                    readU8Array((u8*)tempEntry->location, locationLength);
+                                } else {
+                                    tempEntry->location = nullptr;
+                                }
+                                
+                                dref.list[i] = tempEntry;
+                            }
+                                break;
+                            case GF_ISOM_ENTRY_TYPE_RSRC:
+                            {
+                                cout << "warning: deprecated rsrc data reference entry" << endl;
+                                
+                            }
+                            default:
+                                break;
+                        }
+                    }
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_STBL:
+                {
+                    memcpy(&stbl, &box, sizeof(box));
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_STSD:
+                {
+                    memcpy(&stsd, &box, sizeof(box));
+                    stsd.version = version;
+                    stsd.flags = flags;
+                    stsd.entry_count = readU32();
+                    stsd.list = (SampleDescriptionEntryBox**)malloc(sizeof(SampleDescriptionEntryBox*) * stsd.entry_count);
+                    for (auto i = 0; i < stsd.entry_count; i++) {
+                        struct SampleDescriptionEntryBox *descriptionEntry = (struct SampleDescriptionEntryBox*)malloc(sizeof(struct SampleDescriptionEntryBox));
+                        descriptionEntry->size = readU32();
+                        descriptionEntry->type = readU32();
+                        readU8Array((u8*)descriptionEntry->reserved, sizeof(descriptionEntry->reserved) / sizeof(u8));
+                        descriptionEntry->data_reference_index = readU16();
+                        switch (descriptionEntry->type) {
+                            case GF_ISOM_BOX_TYPE_AVC1:
+                            {
+                                auto videoDescriptionEntry = (struct VideoSampleDescriptionEntryBox*)realloc(descriptionEntry, sizeof(VideoSampleDescriptionEntryBox));
+                                videoDescriptionEntry->version = readU16();
+                                videoDescriptionEntry->revision_level = readU16();
+                                videoDescriptionEntry->vendor = readU32();
+                                videoDescriptionEntry->temporal_quality = readU32();
+                                videoDescriptionEntry->spatial_quality = readU32();
+                                videoDescriptionEntry->width = readU16();
+                                videoDescriptionEntry->height = readU16();
+                                videoDescriptionEntry->horizontal_resolution = readU32();
+                                videoDescriptionEntry->vertical_resolution = readU32();
+                                videoDescriptionEntry->data_size = readU32();
+                                videoDescriptionEntry->frame_count = readU16();
+                                readU32Array(videoDescriptionEntry->compressor_name, sizeof(videoDescriptionEntry->compressor_name) / sizeof(u32));
+                                videoDescriptionEntry->depth = readU16();
+                                videoDescriptionEntry->color_table_id = readU16();
+                                stsd.list[i] = (SampleDescriptionEntryBox*)videoDescriptionEntry;
+                                
+                                // avc1 box必然有一个avcC box
+                                auto tempRangStart = rangeStart;
+                                struct AvccDecoderConfigurationBox avcc;
+                                avcc.size = readU32();
+                                avcc.type = readU32();
+                                cout << "warn: skip box ";
+                                printU32WithStr(avcc.type);
+                                cout << endl;
+                                skip((u32)avcc.size - ((rangeStart + BUF_LEN - tempRangStart) % BUF_LEN));
+                            }
+                                break;
+                                
+                            default:
+                                break;
+                        }
+                    }
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_STTS:
+                {
+                    memcpy(&stts, &box, sizeof(box));
+                    stts.version = version;
+                    stts.flags = flags;
+                    stts.entry_count = readU32();
+                    stts.list = (struct TimeToSampleEntryBox*)malloc(sizeof(struct TimeToSampleEntryBox) * stts.entry_count);
+                    for (auto i = 0; i < stts.entry_count; i++) {
+                        stts.list[i].sample_count = readU32();
+                        stts.list[i].sample_delta = readU32();
+                    }
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_STSS:
+                {
+                    memcpy(&stss, &box, sizeof(box));
+                    stss.version = version;
+                    stss.flags = flags;
+                    stss.entry_count = readU32();
+                    stss.sample_number = (u32*)malloc(sizeof(u32) * stss.entry_count);
+                    for (auto i = 0; i < stss.entry_count; i++) {
+                        stss.sample_number[i] = readU32();
+                    }
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_STSC:
+                {
+                    memcpy(&stsc, &box, sizeof(box));
+                    stsc.version = version;
+                    stsc.flags = flags;
+                    stsc.entry_count = readU32();
+                    stsc.list = (struct SampleToChunkEntryBox*)malloc(sizeof(struct SampleToChunkEntryBox) * stsc.entry_count);
+                    for (auto i = 0; i < stsc.entry_count; i++) {
+                        stsc.list[i].first_chunk = readU32();
+                        stsc.list[i].sample_per_chunk = readU32();
+                        stsc.list[i].sample_description_index = readU32();
+                    }
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_STSZ:
+                {
+                    memcpy(&stsz, &box, sizeof(box));
+                    stsz.version = version;
+                    stsz.flags = flags;
+                    stsz.sample_size = readU32();
+                    stsz.sample_count = readU32();
+                    stsz.sample_size_list = nullptr;
+                    if (stsz.sample_size == 0) {
+                        stsz.sample_size_list = (u32*)malloc(sizeof(u32) * stsz.sample_count);
+                        for (auto i = 0; i < stsz.sample_count; i++) {
+                            stsz.sample_size_list[i] = readU32();
                         }
                     }
                 }
