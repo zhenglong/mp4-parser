@@ -41,6 +41,8 @@ enum {
     GF_ISOM_BOX_TYPE_STZ2    = GF_4CC( 's', 't', 'z', '2' ), // TODO: unknown
     GF_ISOM_BOX_TYPE_CO64    = GF_4CC( 'c', 'o', '6', '4' ), // TODO: unknown
     GF_ISOM_BOX_TYPE_STCO    = GF_4CC( 's', 't', 'c', 'o' ),
+    GF_ISOM_BOX_TYPE_SGPD    = GF_4CC( 's', 'g', 'p', 'd' ),
+    GF_ISOM_BOX_TYPE_SBGP    = GF_4CC( 's', 'b', 'g', 'p' ),
 };
 
 // video sample description extensions
@@ -49,7 +51,6 @@ enum {
     GF_ISOM_BOX_TYPE_FIEL    = GF_4CC( 'f', 'i', 'e', 'l' ),
     GF_ISOM_BOX_TYPE_MJQT    = GF_4CC( 'm', 'j', 'q', 't' ),
     GF_ISOM_BOX_TYPE_MJHT    = GF_4CC( 'm', 'j', 'h', 't' ),
-    GF_ISOM_BOX_TYPE_ESDS    = GF_4CC( 'e', 's', 'd', 's' ),
     GF_ISOM_BOX_TYPE_AVCC    = GF_4CC( 'a', 'v', 'c', 'C' ),
     GF_ISOM_BOX_TYPE_PASP    = GF_4CC( 'p', 'a', 's', 'p' ),
     GF_ISOM_BOX_TYPE_COLR    = GF_4CC( 'c', 'o', 'l', 'r' ),
@@ -59,6 +60,7 @@ enum {
 // supported QuickTime audio formats
 enum {
     GF_ISOM_BOX_TYPE_MP4A    = GF_4CC( 'm', 'p', '4', 'a' ),
+    GF_ISOM_BOX_TYPE_ESDS    = GF_4CC( 'e', 's', 'd', 's' ),
 };
 
 enum {

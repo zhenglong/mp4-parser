@@ -239,16 +239,37 @@ struct VideoSampleDescriptionEntryBox {
 // has three versions
 struct MpegAudioSampleDescriptionEntryBox {
     GF_ISOM_SAMPLE_ENTRY_FIELDS
-    u16 version;
-    u16 revision;
-    u32 vendor;
+    u16 version; // 0, 1, 2
+    u16 revision; // 0
+    u32 vendor; // 0
     u16 channel_count;
     u16 bits_per_sample;
+    // 0: for uncompressed audio samples; -2: for compressed audio
     u16 compression_id;
     u16 packet_size;
     u16 sample_rate_hi;
     u16 sample_rate_lo;
-    u8 extensions[36];
+    
+    // v1新增字段
+    u32 samples_per_packet;
+    u32 bytes_per_packet;
+    u32 bytes_per_frame;
+    u32 byrws_per_sample;
+    
+    // v2新增字段
+    u16 always3;
+    u16 always16;
+    u16 alwaysMinus2;
+    u16 always0;
+    u32 always65536;
+    u32 sizeOfStructOnly;
+    u64 audioSampleRate;
+    u32 numAudioChannels;
+    u32 always7F000000;
+    u32 constBitsPerChannel;
+    u32 formatSpecificFlags;
+    u32 constBytesPerAudioPacket;
+    u32 constLpcmFramesPerAudioPacket;
 };
 
 struct AvcDecoderConfigurationBox {
@@ -309,5 +330,75 @@ struct ChunkOffsetBox {
     u32 *chunk_offset_list;
 };
 
+struct ElementaryStreamDescriptorBox {
+    GF_ISOM_FULL_BOX
+    
+};
+
+struct SampleGroupEntryBox {
+    u32 sample_count;
+    u32 group_description_index;
+};
+
+struct SampleGroupBox {
+    GF_ISOM_FULL_BOX
+    u32 grouping_type;
+    u32 grouping_type_parameter;
+    
+    u32 entry_count;
+    struct SampleGroupEntryBox *list;
+};
+
+struct SampleGroupDescriptionEntry {
+    u32 length;
+    u8 *data;
+};
+
+// 'rap '
+struct VisualRandomAccessEntry {
+    u8 num_leading_samples_known;
+    u8 num_leading_samples;
+};
+
+// 'roll'
+struct RollRecoveryEntry {
+    u16 roll_distance;
+};
+
+// 'tele'
+struct TemporalLevelEntry {
+    bool level_independently_decodable;
+};
+
+// 'sap '
+struct  SapEntry {
+    bool dependent_flag;
+    u8 sap_type;
+};
+
+// 'sync'
+struct SyncEntry {
+    u8 nalu_type;
+};
+
+// 'oinf'
+struct OperationPointsInformation {
+    u16 scalability_mask;
+};
+
+struct SampleGroupDescriptionBox {
+    GF_ISOM_FULL_BOX
+    u32 grouping_type;
+    u32 default_length;
+    u32 entry_count;
+    // TODO: analyse payload
+};
+
+struct SampleToGroupBox {
+    GF_ISOM_FULL_BOX
+    u32 grouping_type;
+    u32 entry_count;
+    // TODO: analyse table data
+};
 
 #endif /* type_def_h */

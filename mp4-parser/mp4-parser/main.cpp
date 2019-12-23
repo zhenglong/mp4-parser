@@ -35,7 +35,7 @@ ifstream file;
 void makeSureBufReady(u32 requestedBytes) {
     // 如果buf不足以完成本次读取，则填满buf的可用空间
     // TODO: 暂时不处理：1. 到达文件结尾的情况 2. 请求的字节数大于BUF_LEN
-    cout << rangeStart << ' ' << rangeEnd << endl;
+//    cout << rangeStart << ' ' << rangeEnd << endl;
     if (((rangeEnd + BUF_LEN - rangeStart) % BUF_LEN) < requestedBytes) {
         auto availableStartIndex = (rangeEnd + 1) % BUF_LEN;
         
@@ -58,7 +58,7 @@ u8 readNextByte() {
     return  res;
 }
 
-u32 readU16() {
+u16 readU16() {
     makeSureBufReady(sizeof(u16));
     u32 num = readNextByte();
     num <<= 8;
@@ -176,6 +176,7 @@ int main(int argc, const char * argv[]) {
         struct HandlerBox hdlr;
         struct MediaInformationBox minf;
         struct VideoMediaHeaderBox vmhd;
+        struct SoundMediaHeaderBox smhd;
         struct DataInformationBox dinf;
         struct DataReferenceBox dref;
         struct SampleTableBox stbl;
@@ -185,6 +186,8 @@ int main(int argc, const char * argv[]) {
         struct SampleToChunkBox stsc;
         struct SampleSizeBox stsz;
         struct ChunkOffsetBox stco;
+        struct SampleGroupDescriptionBox sgpd;
+        struct SampleToGroupBox sbgp;
         
         while (((rangeStart + 1) % BUF_LEN) != rangeEnd) {
             auto boxStartIndex = rangeStart;
@@ -205,13 +208,15 @@ int main(int argc, const char * argv[]) {
                 box.type == GF_ISOM_BOX_TYPE_MDHD ||
                 box.type == GF_ISOM_BOX_TYPE_HDLR ||
                 box.type == GF_ISOM_BOX_TYPE_VMHD ||
+                box.type == GF_ISOM_BOX_TYPE_SMHD ||
                 box.type == GF_ISOM_BOX_TYPE_DREF ||
                 box.type == GF_ISOM_BOX_TYPE_STSD ||
                 box.type == GF_ISOM_BOX_TYPE_STTS ||
                 box.type == GF_ISOM_BOX_TYPE_STSS ||
                 box.type == GF_ISOM_BOX_TYPE_STSC ||
                 box.type == GF_ISOM_BOX_TYPE_STSZ ||
-                box.type == GF_ISOM_BOX_TYPE_STCO) {
+                box.type == GF_ISOM_BOX_TYPE_STCO ||
+                box.type == GF_ISOM_BOX_TYPE_SGPD) {
                 version = readNextByte();
                 flags = readU24();
             }
@@ -399,6 +404,15 @@ int main(int argc, const char * argv[]) {
                     readU16Array(vmhd.opcolor, sizeof(vmhd.opcolor) / sizeof(u16));
                 }
                     break;
+                case GF_ISOM_BOX_TYPE_SMHD:
+                {
+                    memcpy(&smhd, &box, sizeof(box));
+                    smhd.version = version;
+                    smhd.flags = flags;
+                    smhd.balance = readU16();
+                    smhd.reserved = readU16();
+                }
+                    break;
                 case GF_ISOM_BOX_TYPE_DINF:
                 {
                     memcpy(&dinf, &box, sizeof(box));
@@ -497,6 +511,63 @@ int main(int argc, const char * argv[]) {
                                 skip((u32)avcc.size - ((rangeStart + BUF_LEN - tempRangStart) % BUF_LEN));
                             }
                                 break;
+                            case GF_ISOM_BOX_TYPE_MP4A:
+                            {
+                                auto audioDescriptionEntry = (struct MpegAudioSampleDescriptionEntryBox*)realloc(descriptionEntry, sizeof(MpegAudioSampleDescriptionEntryBox));
+                                audioDescriptionEntry->version = readU16();
+                                audioDescriptionEntry->revision = readU16();
+                                audioDescriptionEntry->vendor = readU32();
+                                audioDescriptionEntry->channel_count = readU16();
+                                audioDescriptionEntry->bits_per_sample = readU16();
+                                audioDescriptionEntry->compression_id = readU16();
+                                audioDescriptionEntry->packet_size = readU16();
+                                audioDescriptionEntry->sample_rate_hi = readU16();
+                                audioDescriptionEntry->sample_rate_lo = readU16();
+                                
+                                // version 1+
+                                if (audioDescriptionEntry->version > 0) {
+                                    audioDescriptionEntry->samples_per_packet = readU32();
+                                    audioDescriptionEntry->bytes_per_packet = readU32();
+                                    audioDescriptionEntry->bytes_per_frame = readU32();
+                                    audioDescriptionEntry->bits_per_sample = readU32();
+                                }
+                                
+                                // version 2+
+                                if (audioDescriptionEntry->version > 1) {
+                                    audioDescriptionEntry->always3 = readU16();
+                                    audioDescriptionEntry->always16 = readU16();
+                                    audioDescriptionEntry->alwaysMinus2 = readU16();
+                                    audioDescriptionEntry->always0 = readU16();
+                                    audioDescriptionEntry->always65536 = readU16();
+                                    audioDescriptionEntry->sizeOfStructOnly = readU32();
+                                    audioDescriptionEntry->audioSampleRate = readU64();
+                                    audioDescriptionEntry->numAudioChannels = readU32();
+                                    audioDescriptionEntry->always7F000000 = readU32();
+                                    audioDescriptionEntry->constBitsPerChannel = readU32();
+                                    audioDescriptionEntry->formatSpecificFlags = readU32();
+                                    audioDescriptionEntry->constBytesPerAudioPacket = readU32();
+                                    audioDescriptionEntry->constLpcmFramesPerAudioPacket = readU32();
+                                }
+                                
+                                // 跳过esds box
+                                auto savedRangeStart = rangeStart;
+                                struct ElementaryStreamDescriptorBox esds;
+                                esds.size = readU32();
+                                esds.type = readU32();
+                                if (esds.type == GF_ISOM_BOX_TYPE_ESDS) {
+                                    esds.version = readNextByte();
+                                    esds.flags = readU24();
+                                    cout << "warn: jump box ";
+                                    printU32WithStr(esds.type);
+                                    cout << endl;
+                                } else {
+                                    cout << "unrecognized box type: ";
+                                    printU32WithStr(esds.type);
+                                    cout << endl;
+                                }
+                                skip((u32)esds.size - ((rangeStart + BUF_LEN - savedRangeStart) % BUF_LEN));
+                            }
+                                break;
                                 
                             default:
                                 break;
@@ -569,6 +640,32 @@ int main(int argc, const char * argv[]) {
                     for (auto i = 0; i < stco.entry_count; i++) {
                         stco.chunk_offset_list[i] = readU32();
                     }
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_SGPD:
+                {
+                    memcpy(&sgpd, &box, sizeof(box));
+                    sgpd.version = version;
+                    sgpd.flags = flags;
+                    sgpd.grouping_type = readU32();
+                    cout << "grouping_type: ";
+                    printU32WithStr(sgpd.grouping_type);
+                    cout << endl;
+                    sgpd.default_length = readU32();
+                    sgpd.entry_count = readU32();
+                    skip((u32)box.size - ((rangeStart + BUF_LEN - boxStartIndex) % BUF_LEN));
+                }
+                    break;
+                case GF_ISOM_BOX_TYPE_SBGP:
+                {
+                    memcpy(&sbgp, &box, sizeof(box));
+                    sbgp.version = version;
+                    sbgp.flags = flags;
+                    sbgp.grouping_type = readU32();
+                    cout << "grouping_type: ";
+                    printU32WithStr(sgpd.grouping_type);
+                    sbgp.entry_count = readU32();
+                    skip((u32)box.size - ((rangeStart + BUF_LEN - boxStartIndex) % BUF_LEN));
                 }
                     break;
                 default:
