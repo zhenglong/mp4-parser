@@ -40,6 +40,11 @@ void makeSureBufReady(u32 requestedBytes) {
     
     // 在预加载时会预留1字节，因此，在最后一次检测时，仍然会触发文件读取
     // 此时错误可以忽略
+
+    // 如果缓存刚好够，并且文件也为空，则直接返回
+    if ((((rangeEnd + BUF_LEN - rangeStart + 1) % BUF_LEN) == requestedBytes) && !file.good()) {
+        return;
+    }
     if (((rangeEnd + BUF_LEN - rangeStart) % BUF_LEN) < requestedBytes) {
         auto availableStartIndex = (rangeEnd + 1) % BUF_LEN;
         
