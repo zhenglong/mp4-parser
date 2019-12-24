@@ -401,4 +401,9 @@ struct SampleToGroupBox {
     // TODO: analyse table data
 };
 
+struct UserDataBox {
+    GF_ISOM_BOX
+    // TODO: analyse user data list
+};
+
 #endif /* type_def_h */

@@ -43,6 +43,7 @@ enum {
     GF_ISOM_BOX_TYPE_STCO    = GF_4CC( 's', 't', 'c', 'o' ),
     GF_ISOM_BOX_TYPE_SGPD    = GF_4CC( 's', 'g', 'p', 'd' ),
     GF_ISOM_BOX_TYPE_SBGP    = GF_4CC( 's', 'b', 'g', 'p' ),
+    GF_ISOM_BOX_TYPE_UDTA    = GF_4CC( 'u', 'd', 't', 'a' ),
 };
 
 // video sample description extensions

@@ -30,31 +30,60 @@ const static int BUF_LEN = 4096;
 char buf[BUF_LEN];
 u32 rangeStart = 0; // 可用数据的起始索引
 u32 rangeEnd = BUF_LEN - 1; // 可用数据的结束索引
+bool isBufEmpty = false; // 缓存为空
 ifstream file;
 
 void makeSureBufReady(u32 requestedBytes) {
     // 如果buf不足以完成本次读取，则填满buf的可用空间
     // TODO: 暂时不处理：1. 到达文件结尾的情况 2. 请求的字节数大于BUF_LEN
 //    cout << rangeStart << ' ' << rangeEnd << endl;
+    
+    // 在预加载时会预留1字节，因此，在最后一次检测时，仍然会触发文件读取
+    // 此时错误可以忽略
     if (((rangeEnd + BUF_LEN - rangeStart) % BUF_LEN) < requestedBytes) {
         auto availableStartIndex = (rangeEnd + 1) % BUF_LEN;
         
+        int readCount = 0;
+        auto errorType = 0;
         if (availableStartIndex > rangeStart) {
-            file.read(buf + availableStartIndex, BUF_LEN - availableStartIndex);
-            if (rangeStart > 0) {
-                file.read(buf, rangeStart);
+            if (file.good()) {
+                file.read(buf + availableStartIndex, BUF_LEN - availableStartIndex);
+                readCount += file.gcount();
+                if (rangeStart > 0 && file.good()) {
+                    file.read(buf, rangeStart);
+                    readCount += file.gcount();
+                } else {
+                    errorType = 1;
+                }
+            } else {
+                errorType = 2;
             }
         } else {
-            file.read(buf + availableStartIndex, rangeStart - availableStartIndex);
+            if (file.good()) {
+                file.read(buf + availableStartIndex, rangeStart - availableStartIndex);
+                readCount += file.gcount();
+            } else {
+                errorType = 3;
+            }
         }
-        rangeEnd = (rangeStart - 1 + BUF_LEN) % BUF_LEN;
+        if (errorType > 0) {
+            cout << "ERROR: file error " << errorType << endl;
+            cout << "detail: " << file.rdstate() << endl;
+        }
+        rangeEnd = (availableStartIndex + readCount - 1) % BUF_LEN;
     }
+}
+
+void stepRangeStart(u32 offset) {
+    // 如果rangStart超过了rangeEnd，则设置缓存为空
+    isBufEmpty = ((rangeEnd - rangeStart + BUF_LEN + 1) % BUF_LEN) <= offset;
+    rangeStart = (rangeStart + offset) % BUF_LEN;
 }
 
 u8 readNextByte() {
     makeSureBufReady(sizeof(u8));
     u8 res = (u8)buf[rangeStart];
-    rangeStart = (rangeStart + 1) % BUF_LEN;
+    stepRangeStart(1);
     return  res;
 }
 
@@ -137,22 +166,22 @@ void skip(u32 bytes) {
         }
     } else {
         makeSureBufReady(bytes);
-        rangeStart = (rangeStart + bytes) % BUF_LEN;
+        stepRangeStart(bytes);
     }
 }
 
 void readU8Array(u8 *dest, u32 len) {
     // TODO: 暂不处理len大于BUF_LEN的情况
     makeSureBufReady(len * sizeof(u8));
-    auto expectedRangStart = (rangeStart + len) % BUF_LEN;
-    if (expectedRangStart > rangeStart) {
+    auto expectedRangeStart = (rangeStart + len) % BUF_LEN;
+    if (expectedRangeStart > rangeStart) {
         memcpy(dest, buf + rangeStart, len);
     } else {
         auto firstPartLen =BUF_LEN - rangeStart;
         memcpy(dest, buf + rangeStart, firstPartLen);
         memcpy(dest + firstPartLen, buf, len - firstPartLen);
     }
-    rangeStart = expectedRangStart;
+    stepRangeStart(len);
 }
 
 int main(int argc, const char * argv[]) {
@@ -188,8 +217,9 @@ int main(int argc, const char * argv[]) {
         struct ChunkOffsetBox stco;
         struct SampleGroupDescriptionBox sgpd;
         struct SampleToGroupBox sbgp;
+        struct UserDataBox udta;
         
-        while (((rangeStart + 1) % BUF_LEN) != rangeEnd) {
+        do {
             auto boxStartIndex = rangeStart;
             box.size = readU32();
             box.type = readU32();
@@ -426,7 +456,7 @@ int main(int argc, const char * argv[]) {
                     dref.entry_count = readU32();
                     dref.list = (DataReferenceEntryBox**)malloc(sizeof(DataReferenceEntryBox*) * dref.entry_count);
                     for (auto i = 0; i < dref.entry_count; i++) {
-                        auto savedRangStart = rangeStart;
+                        auto savedRangeStart = rangeStart;
                         auto entrySize = readU32();
                         auto entryType = readU32();
                         auto entryVersion = readNextByte();
@@ -440,7 +470,7 @@ int main(int argc, const char * argv[]) {
                                 tempEntry->type = entryType;
                                 tempEntry->version = entryVersion;
                                 tempEntry->flags = entryFlags;
-                                auto locationLength = (entrySize - ((rangeStart + BUF_LEN - savedRangStart) % BUF_LEN));
+                                auto locationLength = (entrySize - ((rangeStart + BUF_LEN - savedRangeStart) % BUF_LEN));
                                 if (locationLength > 0) {
                                     tempEntry->location = (char *)malloc(sizeof(char) * locationLength);
                                     readU8Array((u8*)tempEntry->location, locationLength);
@@ -501,14 +531,14 @@ int main(int argc, const char * argv[]) {
                                 stsd.list[i] = (SampleDescriptionEntryBox*)videoDescriptionEntry;
                                 
                                 // avc1 box必然有一个avcC box
-                                auto tempRangStart = rangeStart;
+                                auto tempRangeStart = rangeStart;
                                 struct AvccDecoderConfigurationBox avcc;
                                 avcc.size = readU32();
                                 avcc.type = readU32();
                                 cout << "warn: skip box ";
                                 printU32WithStr(avcc.type);
                                 cout << endl;
-                                skip((u32)avcc.size - ((rangeStart + BUF_LEN - tempRangStart) % BUF_LEN));
+                                skip((u32)avcc.size - ((rangeStart + BUF_LEN - tempRangeStart) % BUF_LEN));
                             }
                                 break;
                             case GF_ISOM_BOX_TYPE_MP4A:
@@ -664,16 +694,27 @@ int main(int argc, const char * argv[]) {
                     sbgp.grouping_type = readU32();
                     cout << "grouping_type: ";
                     printU32WithStr(sgpd.grouping_type);
+                    cout << endl;
                     sbgp.entry_count = readU32();
                     skip((u32)box.size - ((rangeStart + BUF_LEN - boxStartIndex) % BUF_LEN));
                 }
                     break;
+                case GF_ISOM_BOX_TYPE_UDTA:
+                {
+                    memcpy(&udta, &box, sizeof(box));
+                    skip((u32)box.size - ((rangeStart + BUF_LEN - boxStartIndex) % BUF_LEN));
+                }
+                    break;
                 default:
-                    readNextByte();
+                    cout << "************skip box type:" << endl;
+                    printU32WithStr(box.type);
+                    cout << "************" << endl;
+                    skip((u32)box.size - ((rangeStart + BUF_LEN - boxStartIndex) % BUF_LEN));
                     break;
             }
-        }
+        } while (!isBufEmpty || file.good());
         file.close();
+        cout << "analysis completed!" << endl;
     }
     return 0;
 }
