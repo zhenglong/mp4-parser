@@ -166,6 +166,8 @@ SDL_mutex * screen_mutex;
  */
 VideoState * global_video_state;
 
+int refresh_delay = 10;
+
 /**
  * Methods declaration.
  */
@@ -311,7 +313,7 @@ int main(int argc, char * argv[])
     videoState->pictq_cond = SDL_CreateCond();
 
     // launch our threads by pushing an FF_REFRESH_EVENT event
-    schedule_refresh(videoState, 39);
+    schedule_refresh(videoState, refresh_delay);
 
     // start the decoding thread to read data from the AVFormatContext
     videoState->decode_tid = SDL_CreateThread(decode_thread, "Decoding Thread", videoState);
@@ -1017,14 +1019,14 @@ void video_refresh_timer(void * userdata)
         // check the VideoPicture queue contains decoded frames
         if (videoState->pictq_size == 0)
         {
-            schedule_refresh(videoState, 39);
+            schedule_refresh(videoState, refresh_delay);
         }
         else
         {
             // get VideoPicture reference using the queue read index
             videoPicture = &videoState->pictq[videoState->pictq_rindex];
 
-            schedule_refresh(videoState, 39);
+            schedule_refresh(videoState, refresh_delay);
 
             // show the frame on the SDL_Surface (the screen)
             video_display(videoState);
@@ -1050,7 +1052,7 @@ void video_refresh_timer(void * userdata)
     }
     else
     {
-        schedule_refresh(videoState, 39);
+        schedule_refresh(videoState, refresh_delay);
     }
 }
 
