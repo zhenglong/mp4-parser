@@ -272,6 +272,7 @@ int main(int argc, char * argv[])
     }
     
     // create sdl window here in main thread rather than the rendering thread
+    // macos下需要在主线程创建窗口
     unsigned int playerWidth = 600;
     screen = SDL_CreateWindow(
             "FFmpeg SDL Video Player",
@@ -288,8 +289,7 @@ int main(int argc, char * argv[])
         return -1;
     }
 
-    //
-//    SDL_GL_SetSwapInterval(1);
+    SDL_GL_SetSwapInterval(1);
 
     // initialize global SDL_Surface mutex reference
     screen_mutex = SDL_CreateMutex();
