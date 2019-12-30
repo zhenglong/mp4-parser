@@ -166,6 +166,9 @@ SDL_mutex * screen_mutex;
  */
 VideoState * global_video_state;
 
+/**
+ * 会影响视频播放的快慢
+ */
 int refresh_delay = 10;
 
 /**
