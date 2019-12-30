@@ -354,27 +354,75 @@ struct SampleGroupDescriptionEntry {
     u8 *data;
 };
 
+// =============================================
+// ================visual================
+// 'roll'
+struct RollRecoveryEntry {
+    u16 roll_distance;
+};
+
+struct AlternativeStartupSubSubEntry {
+    u16 num_output_samples;
+    u16 num_total_samples;
+};
+
+struct AlternativeStartupSubEntry {
+    u32 sample_offset;
+    u32 entry_count;
+    struct AlternativeStartupSubSubEntry *list;
+};
+
+// 'alst'
+struct AlternativeStartupEntry {
+    u16 roll_count;
+    u16 first_output_sample;
+    struct AlternativeStartupSubEntry *list;
+};
+
 // 'rap '
 struct VisualRandomAccessEntry {
     u8 num_leading_samples_known;
     u8 num_leading_samples;
 };
 
-// 'roll'
-struct RollRecoveryEntry {
-    u16 roll_distance;
-};
-
 // 'tele'
 struct TemporalLevelEntry {
     bool level_independently_decodable;
 };
+// =============================================
 
+// =============================================
+// ================audio================
+// 'prol'
+struct PreRollEntry {
+    u16 roll_distance;
+};
+// =============================================
+
+// =============================================
+// ================audio================
 // 'sap '
 struct  SapEntry {
     bool dependent_flag;
     u8 sap_type;
 };
+
+struct RateShareSubEntry {
+    u32 available_bitrate;
+    u16 target_rate_share;
+};
+
+// 'rash'
+struct RateShareEntry {
+    u16 operation_point_count;
+    u16 target_rate_share; // operation_point_count == 1
+    RateShareSubEntry *list;
+    
+    u32 maximum_bitrate;
+    u32 minimum_bitrate;
+    u8 discard_priority;
+};
+// =============================================
 
 // 'sync'
 struct SyncEntry {
@@ -389,7 +437,8 @@ struct OperationPointsInformation {
 struct SampleGroupDescriptionBox {
     GF_ISOM_FULL_BOX
     u32 grouping_type;
-    u32 default_length;
+    u32 default_length; // version == 1
+    u32 default_sample_description_index; // version >= 2
     u32 entry_count;
     // TODO: analyse payload
 };
