@@ -52,7 +52,7 @@
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "/Users/hujiang/Downloads/1.mp4"
+            argument = "/Users/hujiang/Downloads/2.mp4"
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument

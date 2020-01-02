@@ -373,6 +373,11 @@ static int audio_resampling(
 
 AudioResamplingState * getAudioResampling(uint64_t channel_layout);
 
+int video_width = 400;
+int video_height = 400;
+// 如果第一个帧的宽高与播放器初始宽高不一致，则在REFRESH_EVENT中要重置播放器宽高
+int is_display_ratio_changed = 0;
+
 /**
  * Entry point.
  *
@@ -409,13 +414,12 @@ int main(int argc, char * argv[])
     videoState = (VideoState *)av_mallocz(sizeof(VideoState));
     
     // create a window with the specified position, dimensions, and flags.
-    int screen_width = 1280;
     screen = SDL_CreateWindow(
             "FFmpeg SDL Video Player",
             SDL_WINDOWPOS_UNDEFINED,
             SDL_WINDOWPOS_UNDEFINED,
-            screen_width,
-            (int)(screen_width * 72.0f / 128.0f),
+            video_width,
+            video_height,
             SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI
     );
 
@@ -489,6 +493,9 @@ int main(int argc, char * argv[])
 
             case FF_REFRESH_EVENT:
             {
+                if (is_display_ratio_changed == 2) {
+                    SDL_SetWindowSize(screen, video_width, video_height);
+                }
                 video_refresh_timer(event.user.data1);
             }
             break;
@@ -1130,6 +1137,20 @@ int video_thread(void * arg)
             else
             {
                 frameFinished = 1;
+            }
+            
+            if (is_display_ratio_changed == 0) {
+                if (video_width != pFrame->width) {
+                    video_width = pFrame->width;
+                    is_display_ratio_changed = 2;
+                }
+                if (video_height != pFrame->height) {
+                    video_height = pFrame->height;
+                    is_display_ratio_changed = 2;
+                }
+                if (is_display_ratio_changed != 2) {
+                    is_display_ratio_changed = 1;
+                }
             }
 
             // attempt to guess proper monotonic timestamps for decoded video frames
